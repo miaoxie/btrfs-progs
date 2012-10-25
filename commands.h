@@ -48,6 +48,9 @@ struct cmd_struct {
 
 	/* if true don't list this token in help listings */
 	int hidden;
+
+	/* number of the extra short usage lines  */
+	int lines;
 };
 
 struct cmd_group {
@@ -70,6 +73,7 @@ int handle_command_group(const struct cmd_group *grp, int argc,
 /* help.c */
 extern const char * const generic_cmd_help_usage[];
 
+void usage_lines(const char * const *usagestr, int lines);
 void usage(const char * const *usagestr);
 void usage_command(const struct cmd_struct *cmd, int full, int err);
 void usage_command_group(const struct cmd_group *grp, int all, int err);
