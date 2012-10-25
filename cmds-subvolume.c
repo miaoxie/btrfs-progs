@@ -32,6 +32,7 @@
 #include "ctree.h"
 #include "commands.h"
 #include "btrfs-list.h"
+#include "yesno.h"
 
 static const char * const subvolume_cmd_group_usage[] = {
 	"btrfs subvolume <command> <args>",
@@ -620,22 +621,81 @@ static int cmd_subvol_get_default(int argc, char **argv)
 
 static const char * const cmd_subvol_set_default_usage[] = {
 	"btrfs subvolume set-default <subvolid> <path>",
+	"btrfs subvolume set-default [-p] [-f] <path>",
 	"Set the default subvolume of a filesystem",
+	"-p	If <path> is not a subvolume, it will enter",
+	"	interactive mode, then you can choose to set",
+	"	the parent tree of the <path> as default or not.",
+	"-f	This option must be used with -p. The interactive",
+	"	mode will be skipped and 'yes' will be set.",
 	NULL
 };
 
 static int cmd_subvol_set_default(int argc, char **argv)
 {
-	int	ret=0, fd, e;
-	u64	objectid;
+	int	ret = 0, fd = -1, e;
+	int	parent = 0, force = 0;
+	u64	objectid = -1;
 	char	*path;
-	char	*subvolid;
+	char	*subvolid, *inv;
 
-	if (check_argc_exact(argc, 3))
-		usage(cmd_subvol_set_default_usage);
+	optind = 1;
+	while (1) {
+		int c = getopt(argc, argv, "pf");
+		if (c < 0)
+			break;
 
-	subvolid = argv[1];
-	path = argv[2];
+		switch (c) {
+		case 'p':
+			parent = 1;
+			break;
+		case 'f':
+			force = 1;
+			break;
+		default:
+			usage_lines(cmd_subvol_set_default_usage, 1);
+		}
+	}
+
+	if (check_argc_min(argc - optind, 1) ||
+		check_argc_max(argc - optind, 3))
+		usage_lines(cmd_subvol_set_default_usage, 1);
+
+	if (force && !parent)
+		usage_lines(cmd_subvol_set_default_usage, 1);
+
+	if (argc - optind == 2) {
+		subvolid = argv[optind];
+		path = argv[optind + 1];
+
+		objectid = (unsigned long long)strtoll(subvolid, &inv, 0);
+		if (errno == ERANGE || subvolid == inv) {
+			fprintf(stderr,
+				"ERROR: invalid tree id (%s)\n", subvolid);
+			return 30;
+		}
+	} else {
+		path = argv[optind];
+
+		ret = test_issubvolume(path);
+		if (ret < 0) {
+			fprintf(stderr,
+				"ERROR: error accessing '%s'\n", path);
+			return 12;
+		}
+		if (!ret) {
+			fprintf(stderr,
+				"'%s' is not a subvolume, use parent tree instead",
+				path);
+			if (force)
+				fprintf(stderr, "!\n");
+			else {
+				fprintf(stderr, "? (y or n)");
+				if (!yesno())
+					return 13;
+			}
+		}
+	}
 
 	fd = open_file_or_dir(path);
 	if (fd < 0) {
@@ -643,16 +703,35 @@ static int cmd_subvol_set_default(int argc, char **argv)
 		return 12;
 	}
 
-	objectid = (unsigned long long)strtoll(subvolid, NULL, 0);
-	if (errno == ERANGE) {
-		fprintf(stderr, "ERROR: invalid tree id (%s)\n",subvolid);
-		return 30;
+	/*
+	  * When objectid is -1, it means that
+	  * subvolume id is not specified by user.
+	  * We will set default subvolume by <path>.
+	  */
+	if (objectid == -1) {
+		struct btrfs_ioctl_ino_lookup_args args;
+
+		memset(&args, 0, sizeof(args));
+		args.treeid = 0;
+		args.objectid = BTRFS_FIRST_FREE_OBJECTID;
+
+		ret = ioctl(fd, BTRFS_IOC_INO_LOOKUP, &args);
+		if (ret) {
+			fprintf(stderr,
+				"ERROR: can't perform the search - %s\n",
+				strerror(errno));
+			return ret;
+		}
+
+		objectid = args.treeid;
 	}
+
 	ret = ioctl(fd, BTRFS_IOC_DEFAULT_SUBVOL, &objectid);
 	e = errno;
 	close(fd);
-	if( ret < 0 ){
-		fprintf(stderr, "ERROR: unable to set a new default subvolume - %s\n",
+	if (ret < 0) {
+		fprintf(stderr,
+			"ERROR: unable to set a new default subvolume - %s\n",
 			strerror(e));
 		return 30;
 	}
@@ -708,7 +787,7 @@ const struct cmd_group subvolume_cmd_group = {
 		{ "get-default", cmd_subvol_get_default,
 			cmd_subvol_get_default_usage, NULL, 0 },
 		{ "set-default", cmd_subvol_set_default,
-			cmd_subvol_set_default_usage, NULL, 0 },
+			cmd_subvol_set_default_usage, NULL, 0 , 1 },
 		{ "find-new", cmd_find_new, cmd_find_new_usage, NULL, 0 },
 		{ 0, 0, 0, 0, 0 }
 	}

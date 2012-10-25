@@ -15,6 +15,8 @@ btrfs \- control a btrfs filesystem
 .PP
 \fBbtrfs\fP \fBsubvolume set-default\fP\fI <id> <path>\fP
 .PP
+\fBbtrfs\fP \fBsubvolume set-default\fP\fI [-p] [-f] <subvolume>\fP
+.PP
 \fBbtrfs\fP \fBsubvolume get-default\fP\fI <path>\fP
 .PP
 \fBbtrfs\fP \fBfilesystem defragment\fP -c[zlib|lzo] [-l \fIlen\fR] \
@@ -153,6 +155,21 @@ for \fB--sort\fP you can combine some items together by ',', just like
 Set the subvolume of the filesystem \fI<path>\fR which is mounted as 
 \fIdefault\fR. The subvolume is identified by \fI<id>\fR, which 
 is returned by the \fBsubvolume list\fR command.
+.TP
+
+\fBsubvolume set-default\fR\fI [-p] [-f] <path>\fR
+Set the subvolume of the filesystem as default. The subvolume is identified
+by \fI<path>\fR. By default(no option is given), it should be a path to
+subvolume, or btrfs returns an error.
+
+\fB-p\fR If \fB-p\fR is given, and \fI<path>\fR is a subvolume, btrfs is the
+same as default. And if <path> is not a subvolume, btrfs enters
+interactive mode, then you can choose to set the parent tree of \fI<path>\fR
+as default or not.
+
+\fB-f\fR \fB-f\fR must be used with \fB-p\fR, and the interactive mode
+will be skipped and 'yes' will be chosen. Given \fB-f\fR option without
+\fB-p\fR, btrfs returns an error.
 .TP
 
 \fBsubvolume get-default\fR\fI <path>\fR
