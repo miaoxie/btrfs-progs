@@ -40,66 +40,7 @@
 #include "commands.h"
 #include "free-space-cache.h"
 #include "dev-extent-cache.h"
-
-#define REC_UNCHECKED	0
-#define REC_CHECKED	1
-
-struct block_group_record {
-	struct cache_extent cache;
-	int state;
-
-	u64 objectid;
-	u8  type;
-	u64 offset;
-
-	u64 flags;
-};
-
-struct dev_record {
-	struct rb_node node;
-	u64 devid;
-
-	int state;
-
-	u64 objectid;
-	u8  type;
-	u64 offset;
-
-	u64 total_byte;
-	u64 byte_used;
-};
-
-struct stripe {
-	u64 devid;
-	u64 offset;
-};
-
-struct chunk_record {
-	struct cache_extent cache;
-	int state;
-
-	u64 objectid;
-	u8  type;
-	u64 offset;
-
-	u64 length;
-	u64 type_flags;
-	u16 num_stripes;
-	struct stripe stripes[0];
-};
-
-struct dev_extent_record {
-	struct cache_dev_extent cache;
-	int state;
-
-	u64 objectid;
-	u8  type;
-	u64 offset;
-
-	u64 chunk_objecteid;
-	u64 chunk_offset;
-	u64 length;
-};
+#include "recover-chunk.h"
 
 static u64 bytes_used = 0;
 static u64 total_csum_bytes = 0;

@@ -6,7 +6,8 @@ CFLAGS = -g -O1
 objects = ctree.o disk-io.o radix-tree.o extent-tree.o print-tree.o \
 	  root-tree.o dir-item.o file-item.o inode-item.o inode-map.o \
 	  extent-cache.o extent_io.o volumes.o utils.o repair.o \
-	  qgroup.o raid6.o free-space-cache.o dev-extent-cache.o
+	  qgroup.o raid6.o free-space-cache.o dev-extent-cache.o \
+	  recover-chunk.o
 cmds_objects = cmds-subvolume.o cmds-filesystem.o cmds-device.o cmds-scrub.o \
 	       cmds-inspect.o cmds-balance.o cmds-send.o cmds-receive.o \
 	       cmds-quota.o cmds-qgroup.o cmds-replace.o cmds-check.o \
@@ -45,7 +46,7 @@ MAKEOPTS = --no-print-directory Q=$(Q)
 
 progs = mkfs.btrfs btrfs-debug-tree btrfsck \
 	btrfs btrfs-map-logical btrfs-image btrfs-zero-log btrfs-convert \
-	btrfs-find-root btrfstune btrfs-show-super
+	btrfs-find-root btrfstune btrfs-show-super chunk-recover
 
 # external libs required by various binaries; for btrfs-foo,
 # specify btrfs_foo_libs = <list of libs>; see $($(subst...)) rules below
@@ -174,6 +175,11 @@ ioctl-test: $(objects) $(libs) ioctl-test.o
 send-test: $(objects) $(libs) send-test.o
 	@echo "    [LD]     $@"
 	$(Q)$(CC) $(CFLAGS) -o send-test $(objects) send-test.o $(LDFLAGS) $(LIBS) -lpthread
+
+chunk-recover: $(objects) chunk-recover.o
+	@echo "    [LD]     $@"
+	$(Q)$(CC) $(CFLAGS) -o chunk-recover chunk-recover.o $(objects) $(LDFLAGS) $(LIBS)
+
 
 manpages:
 	$(Q)$(MAKE) $(MAKEOPTS) -C man

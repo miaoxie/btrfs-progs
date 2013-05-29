@@ -87,3 +87,12 @@ int btrfs_read_buffer(struct extent_buffer *buf, u64 parent_transid);
 
 /* raid6.c */
 void raid6_gen_syndrome(int disks, size_t bytes, void **ptrs);
+
+int find_and_setup_log_root(struct btrfs_root *tree_root,
+			       struct btrfs_fs_info *fs_info,
+			       struct btrfs_super_block *disk_super);
+
+int find_and_setup_root(struct btrfs_root *tree_root,
+			       struct btrfs_fs_info *fs_info,
+			       u64 objectid, struct btrfs_root *root);
+int free_fs_roots(struct btrfs_fs_info *fs_info);

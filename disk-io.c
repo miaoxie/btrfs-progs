@@ -604,7 +604,7 @@ commit_tree:
 	return 0;
 }
 
-static int find_and_setup_root(struct btrfs_root *tree_root,
+int find_and_setup_root(struct btrfs_root *tree_root,
 			       struct btrfs_fs_info *fs_info,
 			       u64 objectid, struct btrfs_root *root)
 {
@@ -630,7 +630,7 @@ static int find_and_setup_root(struct btrfs_root *tree_root,
 	return 0;
 }
 
-static int find_and_setup_log_root(struct btrfs_root *tree_root,
+int find_and_setup_log_root(struct btrfs_root *tree_root,
 			       struct btrfs_fs_info *fs_info,
 			       struct btrfs_super_block *disk_super)
 {
@@ -681,7 +681,7 @@ int btrfs_free_fs_root(struct btrfs_fs_info *fs_info,
 	return 0;
 }
 
-static int free_fs_roots(struct btrfs_fs_info *fs_info)
+int free_fs_roots(struct btrfs_fs_info *fs_info)
 {
 	struct cache_extent *cache;
 	struct btrfs_root *root;
