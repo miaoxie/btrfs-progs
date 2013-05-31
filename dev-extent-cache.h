@@ -26,35 +26,30 @@ struct dev_extent_tree {
 };
 
 struct cache_dev_extent {
-	struct rb_node rb_node;
-	u64 devno;
+	struct rb_node node;
+	u64 devid;
 	u64 offset;
+	u64 size;
 };
 
 void dev_extent_tree_init(struct dev_extent_tree *tree);
 void remove_cache_dev_extent(struct dev_extent_tree *tree,
 			  struct cache_dev_extent *pe);
-struct cache_dev_extent *find_first_cache_dev_extent(
-				struct dev_extent_tree *tree, u64 devno);
+
 struct cache_dev_extent *prev_cache_dev_extent(struct cache_dev_extent *pe);
 struct cache_dev_extent *next_cache_dev_extent(struct cache_dev_extent *pe);
-struct cache_dev_extent *find_cache_dev_extent(struct dev_extent_tree *tree,
-					   u64 devno, u64 offset);
+
+struct cache_dev_extent *
+lookup_cache_dev_extent(struct dev_extent_tree *tree, u64 devno, u64 offset,
+			u64 size);
+struct cache_dev_extent *
+find_first_cache_dev_extent(struct dev_extent_tree *tree, u64 devno);
+
 int insert_cache_dev_extent(struct dev_extent_tree *tree,
-				u64 devno, u64 offset);
-int insert_existing_cache_dev_extent(struct dev_extent_tree *tree,
 				struct cache_dev_extent *pe);
 
 static inline int dev_extent_tree_empty(struct dev_extent_tree *tree)
 {
 	return RB_EMPTY_ROOT(&tree->root);
 }
-
-static inline void free_cache_dev_extent(struct cache_dev_extent *pe)
-{
-	free(pe);
-}
-
-struct cache_dev_extent *alloc_pending_dev_extent(u64 devno, u64 offset);
-
 #endif

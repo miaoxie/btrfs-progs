@@ -20,168 +20,119 @@
 #include "kerncompat.h"
 #include "dev-extent-cache.h"
 
+struct cache_dev_extent_search_range {
+	u64 devid;
+	u64 offset;
+	u64 size;
+};
+
 void dev_extent_tree_init(struct dev_extent_tree *tree)
 {
-	tree->root.rb_node = NULL;
+	tree->root = RB_ROOT;
 }
 
-static struct rb_node *tree_insert(struct rb_root *root, u64 devno,
-				   u64 offset, struct rb_node *node)
+static int device_extent_compare_range(struct rb_node *node, void *data)
 {
-	struct rb_node **p = &root->rb_node;
-	struct rb_node *parent = NULL;
-	struct cache_dev_extent *entry;
+	struct cache_dev_extent_search_range *range;
+	struct cache_dev_extent *dev_extent;
 
-	while (*p) {
-		parent = *p;
-		entry = rb_entry(parent, struct cache_dev_extent, rb_node);
+	range = (struct cache_dev_extent_search_range *)data;
+	dev_extent = rb_entry(node, struct cache_dev_extent, node);
 
-		if (devno == entry->devno) {
-			if (offset < entry->offset)
-				p = &(*p)->rb_left;
-			else if (offset > entry->offset)
-				p = &(*p)->rb_right;
-			else
-				return parent;
-		} else {
-			if (devno < entry->devno)
-				p = &(*p)->rb_left;
-			else if (devno > entry->devno)
-				p = &(*p)->rb_right;
-			else
-				return parent;
-		}
-	}
-
-	entry = rb_entry(parent, struct cache_dev_extent, rb_node);
-	rb_link_node(node, parent, p);
-	rb_insert_color(node, root);
-	return NULL;
+	if (range->devid > dev_extent->devid)
+		return 1;
+	else if (range->devid < dev_extent->devid)
+		return -1;
+	else if (range->offset >= dev_extent->offset + dev_extent->size)
+		return 1;
+	else if (range->offset + range->size <= dev_extent->offset)
+		return -1;
+	else
+		return 0;
 }
 
-static struct rb_node *__tree_search(struct rb_root *root, u64 devno,
-				     u64 offset, struct rb_node **prev_ret)
+static int device_extent_compare_node(struct rb_node *node1,
+				      struct rb_node *node2)
 {
-	struct rb_node *n = root->rb_node;
-	struct rb_node *prev = NULL;
+	struct cache_dev_extent *dev_extent;
+	struct cache_dev_extent_search_range range;
+
+	dev_extent = rb_entry(node2, struct cache_dev_extent, node);
+	range.devid = dev_extent->devid;
+	range.offset = dev_extent->offset;
+	range.size = dev_extent->size;
+
+	return device_extent_compare_range(node1, (void *)&range);
+}
+
+int insert_cache_dev_extent(struct dev_extent_tree *tree,
+			    struct cache_dev_extent *pe)
+{
+	return rb_insert(&tree->root, &pe->node, device_extent_compare_node);
+}
+
+struct cache_dev_extent *lookup_cache_dev_extent(struct dev_extent_tree *tree,
+						 u64 devid, u64 offset,
+						 u64 size)
+{
+	struct rb_node *node;
 	struct cache_dev_extent *entry;
-	struct cache_dev_extent *prev_entry = NULL;
+	struct cache_dev_extent_search_range range;
 
-	while (n) {
-		entry = rb_entry(n, struct cache_dev_extent, rb_node);
-		prev = n;
-		prev_entry = entry;
-
-		if (devno == entry->devno) {
-			if (offset < entry->offset)
-				n = n->rb_left;
-			else if (offset > entry->offset)
-				n = n->rb_right;
-			else
-				return n;
-		} else {
-			if (devno < entry->devno)
-				n = n->rb_left;
-			else if (devno > entry->devno)
-				n = n->rb_right;
-			else
-				return n;
-		}
-	}
-	if (!prev_ret)
+	range.devid = devid;
+	range.offset = offset;
+	range.size = size;
+	node = rb_search(&tree->root, (void *)&range,
+			 device_extent_compare_range, NULL);
+	if (!node)
 		return NULL;
 
-	while (prev && devno >= prev_entry->devno + prev_entry->offset) {
-		prev = rb_next(prev);
-		prev_entry = rb_entry(prev, struct cache_dev_extent, rb_node);
-	}
-	*prev_ret = prev;
-	return NULL;
-}
-
-struct cache_dev_extent *alloc_cache_dev_extent(u64 devno, u64 offset)
-{
-	struct cache_dev_extent *pe = malloc(sizeof(*pe));
-
-	if (!pe)
-		return pe;
-	pe->devno = devno;
-	pe->offset = offset;
-	return pe;
-}
-
-int insert_existing_cache_dev_extent(struct dev_extent_tree *tree,
-				 struct cache_dev_extent *pe)
-{
-	struct rb_node *found;
-
-	found = tree_insert(&tree->root, pe->devno, pe->offset, &pe->rb_node);
-	if (found)
-		return -EEXIST;
-
-	return 0;
-}
-
-int insert_cache_dev_extent(struct dev_extent_tree *tree, u64 devno, u64 offset)
-{
-	struct cache_dev_extent *pe = alloc_cache_dev_extent(devno, offset);
-	int ret;
-	ret = insert_existing_cache_dev_extent(tree, pe);
-	if (ret)
-		free(pe);
-	return ret;
-}
-
-struct cache_dev_extent *find_cache_dev_extent(struct dev_extent_tree *tree,
-					   u64 devno, u64 offset)
-{
-	struct rb_node *prev;
-	struct rb_node *ret;
-	struct cache_dev_extent *entry;
-	ret = __tree_search(&tree->root, devno, offset, &prev);
-	if (!ret)
-		return NULL;
-
-	entry = rb_entry(ret, struct cache_dev_extent, rb_node);
+	entry = rb_entry(node, struct cache_dev_extent, node);
 	return entry;
 }
 
-struct cache_dev_extent *find_first_cache_dev_extent(
-				struct dev_extent_tree *tree, u64 devno)
+struct cache_dev_extent *
+find_first_cache_dev_extent(struct dev_extent_tree *tree, u64 devid)
 {
-	struct rb_node *prev;
-	struct rb_node *ret;
+	struct rb_node *node;
+	struct rb_node *next;
 	struct cache_dev_extent *entry;
+	struct cache_dev_extent_search_range range;
 
-	ret = __tree_search(&tree->root, devno, 1, &prev);
-	if (!ret)
-		ret = prev;
-	if (!ret)
+	range.devid = devid;
+	range.offset = 0;
+	range.size = 1;
+	node = rb_search(&tree->root, (void *)&range,
+			 device_extent_compare_range, &next);
+	if (!node)
+		node = next;
+	if (!node)
 		return NULL;
-	entry = rb_entry(ret, struct cache_dev_extent, rb_node);
+
+	entry = rb_entry(node, struct cache_dev_extent, node);
 	return entry;
 }
 
 struct cache_dev_extent *prev_cache_dev_extent(struct cache_dev_extent *pe)
 {
-	struct rb_node *node = rb_prev(&pe->rb_node);
+	struct rb_node *node = rb_prev(&pe->node);
 
 	if (!node)
 		return NULL;
-	return rb_entry(node, struct cache_dev_extent, rb_node);
+	return rb_entry(node, struct cache_dev_extent, node);
 }
 
 struct cache_dev_extent *next_cache_dev_extent(struct cache_dev_extent *pe)
 {
-	struct rb_node *node = rb_next(&pe->rb_node);
+	struct rb_node *node = rb_next(&pe->node);
 
 	if (!node)
 		return NULL;
-	return rb_entry(node, struct cache_dev_extent, rb_node);
+	return rb_entry(node, struct cache_dev_extent, node);
 }
 
 void remove_cache_dev_extent(struct dev_extent_tree *tree,
-				 struct cache_dev_extent *pe)
+			     struct cache_dev_extent *pe)
 {
-	rb_erase(&pe->rb_node, &tree->root);
+	rb_erase(&pe->node, &tree->root);
 }

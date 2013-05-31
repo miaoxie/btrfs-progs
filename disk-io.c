@@ -789,8 +789,7 @@ struct btrfs_root *btrfs_read_fs_root(struct btrfs_fs_info *fs_info,
 
 	root->cache.start = location->objectid;
 	root->cache.size = 1;
-	ret = insert_existing_cache_extent(&fs_info->fs_root_cache,
-					   &root->cache);
+	ret = insert_cache_extent(&fs_info->fs_root_cache, &root->cache);
 	BUG_ON(ret);
 	return root;
 }

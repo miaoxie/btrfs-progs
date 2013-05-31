@@ -38,17 +38,15 @@ struct cache_extent {
 };
 
 void cache_tree_init(struct cache_tree *tree);
-void remove_cache_extent(struct cache_tree *tree,
-			  struct cache_extent *pe);
+void remove_cache_extent(struct cache_tree *tree, struct cache_extent *pe);
 struct cache_extent *find_first_cache_extent(struct cache_tree *tree,
 						 u64 start);
 struct cache_extent *prev_cache_extent(struct cache_extent *pe);
 struct cache_extent *next_cache_extent(struct cache_extent *pe);
 struct cache_extent *find_cache_extent(struct cache_tree *tree,
 					   u64 start, u64 size);
-int insert_cache_extent(struct cache_tree *tree, u64 start, u64 size);
-int insert_existing_cache_extent(struct cache_tree *tree,
-				 struct cache_extent *pe);
+int add_cache_extent(struct cache_tree *tree, u64 start, u64 size);
+int insert_cache_extent(struct cache_tree *tree, struct cache_extent *pe);
 
 static inline int cache_tree_empty(struct cache_tree *tree)
 {

@@ -56,14 +56,15 @@ struct block_group_record {
 };
 
 struct dev_record {
-	struct cache_extent cache;
+	struct rb_node node;
+	u64 devid;
+
 	int state;
 
 	u64 objectid;
 	u8  type;
 	u64 offset;
 
-	u64 devid;
 	u64 total_byte;
 	u64 byte_used;
 };
@@ -292,6 +293,20 @@ static u8 imode_to_type(u32 imode)
 #undef S_SHIFT
 }
 
+static int device_record_compare(struct rb_node *node1,
+				 struct rb_node *node2)
+{
+	struct dev_record *rec1 = rb_entry(node1, struct dev_record, node);
+	struct dev_record *rec2 = rb_entry(node2, struct dev_record, node);
+
+	if (rec1->devid > rec2->devid)
+		return -1;
+	else if (rec1->devid < rec2->devid)
+		return 1;
+	else
+		return 0;
+}
+
 static struct inode_record *clone_inode_rec(struct inode_record *orig_rec)
 {
 	struct inode_record *rec;
@@ -346,7 +361,7 @@ static struct inode_record *get_inode_rec(struct cache_tree *inode_cache,
 		if (ino == BTRFS_FREE_INO_OBJECTID)
 			rec->found_link = 1;
 
-		ret = insert_existing_cache_extent(inode_cache, &node->cache);
+		ret = insert_cache_extent(inode_cache, &node->cache);
 		BUG_ON(ret);
 	}
 	return rec;
@@ -667,7 +682,7 @@ again:
 			ins->data = rec;
 			rec->refs++;
 		}
-		ret = insert_existing_cache_extent(dst, &ins->cache);
+		ret = insert_cache_extent(dst, &ins->cache);
 		if (ret == -EEXIST) {
 			conflict = get_inode_rec(dst, rec->ino, 1);
 			merge_inode_recs(rec, conflict, dst);
@@ -745,7 +760,7 @@ static int add_shared_node(struct cache_tree *shared, u64 bytenr, u32 refs)
 	cache_tree_init(&node->inode_cache);
 	node->refs = refs;
 
-	ret = insert_existing_cache_extent(shared, &node->cache);
+	ret = insert_cache_extent(shared, &node->cache);
 	BUG_ON(ret);
 	return 0;
 }
@@ -1480,7 +1495,7 @@ static struct root_record *get_root_rec(struct cache_tree *root_cache,
 		rec->cache.start = objectid;
 		rec->cache.size = 1;
 
-		ret = insert_existing_cache_extent(root_cache, &rec->cache);
+		ret = insert_cache_extent(root_cache, &rec->cache);
 		BUG_ON(ret);
 	}
 	return rec;
@@ -2391,7 +2406,7 @@ static int add_extent_rec(struct cache_tree *extent_cache,
 
 	rec->cache.start = start;
 	rec->cache.size = nr;
-	ret = insert_existing_cache_extent(extent_cache, &rec->cache);
+	ret = insert_cache_extent(extent_cache, &rec->cache);
 	BUG_ON(ret);
 	bytes_used += nr;
 	if (set_checked) {
@@ -2517,10 +2532,10 @@ static int add_pending(struct cache_tree *pending,
 		       struct cache_tree *seen, u64 bytenr, u32 size)
 {
 	int ret;
-	ret = insert_cache_extent(seen, bytenr, size);
+	ret = add_cache_extent(seen, bytenr, size);
 	if (ret)
 		return ret;
-	insert_cache_extent(pending, bytenr, size);
+	add_cache_extent(pending, bytenr, size);
 	return 0;
 }
 
@@ -2650,13 +2665,12 @@ static int process_chunk_item(struct cache_tree *chunk_cache,
 			btrfs_stripe_offset_nr(eb, ptr, i);
 	}
 
-	ret = insert_existing_cache_extent(
-		chunk_cache, &rec->cache);
+	ret = insert_cache_extent(chunk_cache, &rec->cache);
 
 	return ret;
 }
 
-static int process_dev_item(struct cache_tree *dev_cache,
+static int process_dev_item(struct rb_root *dev_cache,
 		struct btrfs_key *key, struct extent_buffer *eb, int slot)
 {
 	struct btrfs_dev_item *ptr;
@@ -2672,8 +2686,7 @@ static int process_dev_item(struct cache_tree *dev_cache,
 		return -ENOMEM;
 	}
 
-	rec->cache.start = key->offset;
-	rec->cache.size = 1;
+	rec->devid = key->offset;
 	rec->state = REC_UNCHECKED;
 
 	rec->objectid = key->objectid;
@@ -2684,8 +2697,7 @@ static int process_dev_item(struct cache_tree *dev_cache,
 	rec->total_byte = btrfs_device_total_bytes(eb, ptr);
 	rec->byte_used = btrfs_device_bytes_used(eb, ptr);
 
-	ret = insert_existing_cache_extent(
-		dev_cache, &rec->cache);
+	ret = rb_insert(dev_cache, &rec->node, device_record_compare);
 
 	return ret;
 }
@@ -2715,8 +2727,7 @@ static int process_block_group_item(struct cache_tree *block_group_cache,
 	rec->offset = key->offset;
 	rec->flags = btrfs_disk_block_group_flags(eb, ptr);
 
-	ret = insert_existing_cache_extent(
-		block_group_cache, &rec->cache);
+	ret = insert_cache_extent(block_group_cache, &rec->cache);
 
 	return ret;
 }
@@ -2738,7 +2749,7 @@ static int process_dev_extent_item(struct dev_extent_tree *dev_extent_cache,
 		return -ENOMEM;
 	}
 
-	rec->cache.devno = key->objectid;
+	rec->cache.devid = key->objectid;
 	rec->cache.offset = key->offset;
 	rec->state = REC_UNCHECKED;
 
@@ -2751,9 +2762,9 @@ static int process_dev_extent_item(struct dev_extent_tree *dev_extent_cache,
 	rec->chunk_offset =
 		btrfs_dev_extent_chunk_offset(eb, ptr);
 	rec->length = btrfs_dev_extent_length(eb, ptr);
+	rec->cache.size = rec->length;
 
-	ret = insert_existing_cache_dev_extent(
-		dev_extent_cache, &rec->cache);
+	ret = insert_cache_dev_extent(dev_extent_cache, &rec->cache);
 
 	return ret;
 }
@@ -3288,7 +3299,7 @@ static int run_next_block(struct btrfs_root *root,
 			  struct cache_tree *nodes,
 			  struct cache_tree *extent_cache,
 			  struct cache_tree *chunk_cache,
-			  struct cache_tree *dev_cache,
+			  struct rb_root *dev_cache,
 			  struct cache_tree *block_group_cache,
 			  struct dev_extent_tree *dev_extent_cache)
 {
@@ -3305,15 +3316,17 @@ static int run_next_block(struct btrfs_root *root,
 	struct cache_extent *cache;
 	int reada_bits;
 
-	ret = pick_next_pending(pending, reada, nodes, *last, bits,
-				bits_nr, &reada_bits);
-	if (ret == 0) {
+	nritems = pick_next_pending(pending, reada, nodes, *last, bits,
+				    bits_nr, &reada_bits);
+	if (nritems == 0)
 		return 1;
-	}
+
 	if (!reada_bits) {
-		for(i = 0; i < ret; i++) {
-			insert_cache_extent(reada, bits[i].start,
-					    bits[i].size);
+		for(i = 0; i < nritems; i++) {
+			ret = add_cache_extent(reada, bits[i].start,
+					       bits[i].size);
+			if (ret == -EEXIST)
+				continue;
 
 			/* fixme, get the parent transid */
 			readahead_tree_block(root, bits[i].start,
@@ -4178,28 +4191,22 @@ static void free_chunk_cache(struct cache_tree *chunk_cache)
 	}
 }
 
-static void free_dev_cache(struct cache_tree *dev_cache)
+static void free_dev_record(struct rb_node *node)
 {
-	struct cache_extent *cache;
-	while (1) {
-		struct dev_record *rec;
+	struct dev_record *rec;
 
-		cache = find_first_cache_extent(dev_cache, 0);
-		if (!cache)
-			break;
-		rec = container_of(cache, struct dev_record, cache);
-		if (rec->state == REC_UNCHECKED) {
-			fprintf(stderr,
-				"Dev[%llu, %u, %llu] "
-				"is not referred by any others\n",
+	rec = container_of(node, struct dev_record, node);
+	if (rec->state == REC_UNCHECKED)
+		fprintf(stderr, "Dev[%llu, %u, %llu] is not referred by any others\n",
 				rec->objectid,
 				rec->type,
 				rec->offset);
-		}
+	free(rec);
+}
 
-		remove_cache_extent(dev_cache, &rec->cache);
-		free(rec);
-	}
+static void free_dev_cache(struct rb_root *dev_cache)
+{
+	rb_free_nodes(dev_cache, free_dev_record);
 }
 
 static void free_block_group_cache(struct cache_tree *block_group_cache)
@@ -4322,10 +4329,10 @@ static int check_chunk_refs(struct cache_tree *chunk_cache,
 		}
 
 		for (i = 0; i < chunk_rec->num_stripes; ++i) {
-			dev_extent_item = find_cache_dev_extent(
+			dev_extent_item = lookup_cache_dev_extent(
 				dev_extent_cache,
 				chunk_rec->stripes[i].devid,
-				chunk_rec->stripes[i].offset);
+				chunk_rec->stripes[i].offset, 1);
 			if (dev_extent_item) {
 				dev_extent_rec = container_of(dev_extent_item,
 					struct dev_extent_record, cache);
@@ -4350,23 +4357,23 @@ static int check_chunk_refs(struct cache_tree *chunk_cache,
 }
 
 /* check btrfs_dev_item -> btrfs_dev_extent */
-static int check_dev_refs(struct cache_tree *dev_cache,
+static int check_dev_refs(struct rb_root *dev_cache,
 			struct dev_extent_tree *dev_extent_cache)
 {
-	struct cache_extent *dev_item;
+	struct rb_node *dev_node;
 	struct dev_record *dev_rec;
 	int err = 0;
 
-	dev_item = find_first_cache_extent(dev_cache, 0);
-	while (dev_item) {
+	dev_node = rb_first(dev_cache);
+	while (dev_node) {
 		struct cache_dev_extent *dev_extent_item;
 		struct dev_extent_record *dev_extent_rec;
 		u64 total_byte = 0;
 
-		dev_rec = container_of(dev_item, struct dev_record, cache);
+		dev_rec = container_of(dev_node, struct dev_record, node);
 
 		dev_extent_item = find_first_cache_dev_extent(
-			dev_extent_cache, 0);
+			dev_extent_cache, dev_rec->devid);
 		while (dev_extent_item) {
 			dev_extent_rec = container_of(dev_extent_item,
 				struct dev_extent_record, cache);
@@ -4395,7 +4402,7 @@ static int check_dev_refs(struct cache_tree *dev_cache,
 
 		dev_rec->state = REC_CHECKED;
 
-		dev_item = next_cache_extent(dev_item);
+		dev_node = rb_next(dev_node);
 	}
 	return err;
 }
@@ -4403,7 +4410,7 @@ static int check_dev_refs(struct cache_tree *dev_cache,
 static int check_extents(struct btrfs_trans_handle *trans,
 			 struct btrfs_root *root, int repair)
 {
-	struct cache_tree dev_cache;
+	struct rb_root dev_cache;
 	struct cache_tree chunk_cache;
 	struct cache_tree block_group_cache;
 	struct dev_extent_tree dev_extent_cache;
@@ -4425,7 +4432,7 @@ static int check_extents(struct btrfs_trans_handle *trans,
 	int slot;
 	struct btrfs_root_item ri;
 
-	cache_tree_init(&dev_cache);
+	dev_cache = RB_ROOT;
 	cache_tree_init(&chunk_cache);
 	cache_tree_init(&block_group_cache);
 	dev_extent_tree_init(&dev_extent_cache);

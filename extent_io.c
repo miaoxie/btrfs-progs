@@ -151,7 +151,7 @@ static int insert_state(struct extent_io_tree *tree,
 	state->start = start;
 	state->end = end;
 	update_extent_state(state);
-	ret = insert_existing_cache_extent(&tree->state, &state->cache_node);
+	ret = insert_cache_extent(&tree->state, &state->cache_node);
 	BUG_ON(ret);
 	merge_state(tree, state);
 	return 0;
@@ -172,8 +172,7 @@ static int split_state(struct extent_io_tree *tree, struct extent_state *orig,
 	update_extent_state(prealloc);
 	orig->start = split;
 	update_extent_state(orig);
-	ret = insert_existing_cache_extent(&tree->state,
-					   &prealloc->cache_node);
+	ret = insert_cache_extent(&tree->state, &prealloc->cache_node);
 	BUG_ON(ret);
 	return 0;
 }
@@ -587,7 +586,7 @@ static struct extent_buffer *__alloc_extent_buffer(struct extent_io_tree *tree,
 	eb->cache_node.size = blocksize;
 
 	free_some_buffers(tree);
-	ret = insert_existing_cache_extent(&tree->cache, &eb->cache_node);
+	ret = insert_cache_extent(&tree->cache, &eb->cache_node);
 	if (ret) {
 		free(eb);
 		return NULL;
@@ -622,7 +621,8 @@ struct extent_buffer *find_extent_buffer(struct extent_io_tree *tree,
 	struct cache_extent *cache;
 
 	cache = find_cache_extent(&tree->cache, bytenr, blocksize);
-	if (cache && cache->start == bytenr && cache->size == blocksize) {
+	if (cache && cache->start == bytenr &&
+	    cache->size == blocksize) {
 		eb = container_of(cache, struct extent_buffer, cache_node);
 		list_move_tail(&eb->lru, &tree->lru);
 		eb->refs++;
@@ -652,7 +652,8 @@ struct extent_buffer *alloc_extent_buffer(struct extent_io_tree *tree,
 	struct cache_extent *cache;
 
 	cache = find_cache_extent(&tree->cache, bytenr, blocksize);
-	if (cache && cache->start == bytenr && cache->size == blocksize) {
+	if (cache && cache->start == bytenr &&
+	    cache->size == blocksize) {
 		eb = container_of(cache, struct extent_buffer, cache_node);
 		list_move_tail(&eb->lru, &tree->lru);
 		eb->refs++;

@@ -161,7 +161,7 @@ static inline void rb_link_node(struct rb_node * node, struct rb_node * parent,
 /* The common insert/search/free functions */
 typedef int (*rb_compare_nodes)(struct rb_node *node1, struct rb_node *node2);
 typedef int (*rb_compare_keys)(struct rb_node *node, void *key);
-typedef int (*rb_free_node)(struct rb_node *node);
+typedef void (*rb_free_node)(struct rb_node *node);
 
 int rb_insert(struct rb_root *root, struct rb_node *node,
 	      rb_compare_nodes comp);
